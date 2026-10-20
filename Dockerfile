@@ -46,3 +46,4 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 EXPOSE 3001
 
 CMD ["node", "dist/main"]
+

@@ -101,3 +101,4 @@ jobs:
 
       - name: Verify build artifact
         run: test -f dist/main.js
+
