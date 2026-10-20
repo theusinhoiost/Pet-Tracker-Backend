@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **GitHub Actions CI/CD Workflows** (`.github/workflows/`):
+  - `.github/workflows/ci.yml`: Automated CI pipeline running ESLint, Prettier validation, unit test execution with coverage artifacts, and NestJS build verification on all PRs and pushes to `master`.
+  - `.github/workflows/cd.yml`: Continuous Deployment workflow supporting automated Railway deployments (via CLI or webhook) and automated Docker multi-stage image publishing to GitHub Container Registry (`ghcr.io`).
+- **Production Multi-Stage Dockerfile & .dockerignore**:
+  - Added optimized Alpine-based multi-stage `Dockerfile` with non-root security runner and minimal production image footprint.
+  - Added `.dockerignore` ignoring temporary build, test, and environment files.
+
+### Changed
+- Configured Jest module path mapping (`^src/(.*)$`) in `package.json` for seamless test resolution in CI/CD.
+- Updated unit test specs (`user.service.spec.ts`, `pet.*.spec.ts`, `vaccine.*.spec.ts`, `weight.*.spec.ts`) with proper mock providers so tests pass deterministically in CI.
+
+### Fixed
+- Fixed ESLint type-safety errors in `RolesGuard`, `GlobalExceptionFilter`, and `IsNotFutureDate` validator.
+
+---
+
 ## [0.5.0] - 2026-10-02 — Observability, Prometheus Metrics & Grafana Cloud
 
 ### Added
