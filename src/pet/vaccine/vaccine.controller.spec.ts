@@ -8,7 +8,12 @@ describe('VaccineController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [VaccineController],
-      providers: [VaccineService],
+      providers: [
+        {
+          provide: VaccineService,
+          useValue: {},
+        },
+      ],
     }).compile();
 
     controller = module.get<VaccineController>(VaccineController);

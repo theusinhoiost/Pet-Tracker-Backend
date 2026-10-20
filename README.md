@@ -13,10 +13,11 @@
 ![Swagger](https://img.shields.io/badge/Swagger-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)
 ![pnpm](https://img.shields.io/badge/pnpm-F69220?style=for-the-badge&logo=pnpm&logoColor=white)
 ![Jest](https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
 
 **A modern, production-ready, enterprise-grade RESTful API for comprehensive pet health tracking, vaccination scheduling, weight monitoring, automated proactive notifications, telemetry observability with Prometheus & Grafana Cloud, and multi-provider authentication.**
 
-[Live Frontend](https://pet-tracker-web.vercel.app) • [Interactive API Docs (Swagger)](#-interactive-api-documentation) • [Features](#-features) • [Observability & Monitoring](#-observability--telemetry) • [Getting Started](#-getting-started) • [Database Model](#-database-model-erd)
+[Live Frontend](https://pet-tracker-web.vercel.app) • [Interactive API Docs (Swagger)](#-interactive-api-documentation) • [Features](#-features) • [Observability & Monitoring](#-observability--telemetry-grafana-cloud--alloy) • [Getting Started](#-getting-started) • [Database Model](#-database-model-erd) • [Changelog](./CHANGELOG.md)
 
 </div>
 
@@ -30,7 +31,7 @@
 * **Defensive Security**: Protected by **Helmet**, strict CORS, AES-256-CTR token encryption, and granular Rate Limiting via `@nestjs/throttler`.
 * **Proactive Healthcare**: Complete management for pets, vaccination schedules, historical weight analytics, and an **automated daily background cron job** (`@nestjs/schedule`) delivering in-app vaccine expiration reminders.
 * **Cloud Object Storage**: AWS S3 integration with strict validation (mimetype, size limit), pre-signed expiring download URLs (`@aws-sdk/s3-request-presigner`), and automated asset cleanup on deletion.
-* **Observability & Grafana Cloud Telemetry**: Native **Prometheus metrics** (`prom-client`, `@willsoto/nestjs-prometheus`) integrated with **Grafana Alloy** collector for forwarding metrics to **Grafana Cloud Hosted Prometheus**, secured in production via `MetricsTokenGuard`.
+* **Observability & Grafana Cloud Telemetry**: Native **Prometheus metrics** (`prom-client`, `@willsoto/nestjs-prometheus`) with custom HTTP interceptors and domain gauges/counters (`MetricsModule`), integrated with **Grafana Alloy** collector for forwarding metrics to **Grafana Cloud Hosted Prometheus**, secured in production via `MetricsTokenGuard`.
 * **Containerized Infrastructure**: Streamlined developer experience with **Docker Compose** for local database management.
 
 ---
@@ -39,53 +40,55 @@
 
 ### 🔐 Multi-Provider Authentication & Authorization
 * **Credentials Auth**: Email & password authentication with secure password hashing (`bcryptjs`).
-* **Google OAuth 2.0 Integration**: Single-use, short-lived authorization code exchange flow—tokens are never leaked directly in URL queries.
+* **Google OAuth 2.0 Integration**: Single-use, short-lived authorization code exchange flow (expires in 2 minutes, stored hashed)—tokens are never leaked directly in URL queries.
 * **Token Lifecycle**: Short-lived JWT Access Tokens combined with rotating Refresh Tokens hashed in PostgreSQL.
 * **Role-Based Access Control (RBAC)**: Custom `@Roles()` decorator and `RolesGuard` supporting `USER` and `ADMIN` tiers.
-* **Security Controls**: Force logout support and account soft deletion (`@DeleteDateColumn`).
+* **Security Controls**: Force logout support (`forceLogout`) and account soft deletion (`@DeleteDateColumn`).
 
 ### 🛡️ Application Hardening & Security
 * **Helmet Middleware**: Comprehensive HTTP headers, including Content Security Policy (CSP), HTTP Strict Transport Security (HSTS), and referrer policies.
-* **Rate Limiting (Throttler)**: Global protection (150 req/min) paired with strict endpoint-specific limits (`/auth/login` at 5 req/min, `/auth/refresh` at 20 req/30s).
-* **Payload Validation**: Strict `ValidationPipe` with auto-transformation, whitelisting, and rejection of unallowed properties.
+* **Rate Limiting (Throttler)**: Global protection (150 req/min) paired with strict endpoint-specific limits (`/auth/login` at 5 req/min, `/auth/google/exchange` at 10 req/min, `/auth/refresh` at 20 req/30s).
+* **Payload Validation**: Strict `ValidationPipe` with auto-transformation, whitelisting, rejection of unallowed properties, and custom validators (`IsNotFutureDate`).
 * **Reversible Encryption**: Built-in `AES-256-CTR` service using `scrypt` key derivation and randomized IVs for sensitive credentials.
 
 ### 📊 Observability & Prometheus Metrics
 * **Prometheus Telemetry Endpoint (`/metrics`)**: Standardized exposition format ready for Prometheus scrapers and Grafana dashboards.
-* **Default Runtime Metrics**: Tracks Node.js CPU utilization, event loop latency, memory consumption, active handles, and garbage collection.
-* **Custom Performance Metrics**:
-  * `http_requests_total`: Counter tracking inbound traffic labeled by HTTP `method`, `route`, and response `status`.
-  * `http_request_duration_seconds`: Histogram measuring execution duration and latency percentiles.
+* **Default Runtime Metrics**: Tracks Node.js CPU utilization, event loop latency, memory consumption, active handles, and garbage collection (prefixed with `pettracker_`).
+* **Custom HTTP & Domain Metrics (`MetricsService` & `MetricsInterceptor`)**:
+  * `http_requests_total`: Counter tracking inbound traffic labeled by HTTP `method`, normalized `route`, and response `status`.
+  * `http_request_duration_seconds`: Histogram measuring execution duration and latency percentiles across buckets (`0.05s` to `5s`).
+  * `pettracker_pets_created_total`: Counter tracking total pets registered on the platform.
+  * `pettracker_trackers_online`: Gauge monitoring active trackers online.
 * **Token-Guarded Security (`MetricsTokenGuard`)**:
-  * In production (`NODE_ENV=production`), requires the `x-metrics-token` header matching the environment `METRICS_TOKEN`.
+  * In production (`NODE_ENV=production`), requires either the `x-metrics-token: <token>` header or `Authorization: Bearer <token>` matching the environment `METRICS_TOKEN`.
   * Open in development/staging environments for easy testing and local scraping.
-* **Grafana Alloy Integration**: Pre-configured configuration template ([config.alloy.example](file:///config.alloy.example)) to scrape the API and stream telemetry directly into **Grafana Cloud**.
+* **Grafana Alloy Integration**: Pre-configured configuration template ([`config.alloy.example`](./config.alloy.example)) to scrape the API and stream telemetry directly into **Grafana Cloud**.
 
 ### 🐾 Pet Lifecycle Management
-* Complete CRUD for pets with species classification (`dog`, `cat`, `bird`, `other`).
+* Complete CRUD for pets with species classification (`dog`, `cat`, `bird`, `other`) and optional medical/behavioral `notes`.
 * Strict tenant isolation: owners can only access, modify, or delete their own pets.
-* Image upload with Multer, pre-filtered for allowed image types (`PNG`, `JPEG`, `WebP`) and max 3MB file size.
+* Image upload with Multer, pre-filtered for allowed image types (`PNG`, `JPEG`, `JPG`, `WebP`) and max 3MB file size.
 
 ### 💉 Healthcare & Vaccine Schedule
-* Track applied vaccines and upcoming booster doses (`applicationDate`, `nextDueDate`).
+* Track applied vaccines and upcoming booster doses (`vaccineName`, `applicationDate`, `nextDueDate`).
 * Status tracking: `APPLIED`, `PENDING`, and `OVERDUE`.
-* Cascade prevention and complete isolation per pet.
+* Cascade cleanup and complete ownership verification per pet.
 
 ### ⚖️ Weight Tracking & Trend Analytics
-* Historical weight logging per pet with timestamped records.
-* Specialized analytic endpoint (`GET /weight/:petId/last`) returning recent metrics optimized for frontend progress charts.
+* Historical weight logging per pet with timestamped records (`value`, `measurementDay`).
+* Specialized analytic endpoint (`GET /weight/:petId/last`) returning recent metrics (last 10 records) optimized for frontend progress charts.
 
 ### ⏰ Automated Background Engine & Notifications
 * **Daily Cron Job** at 8:00 AM (`@Cron(CronExpression.EVERY_DAY_AT_8AM)`):
-  * Scans all pet vaccines scheduled for renewal.
-  * Triggers proactive notifications at **7 days before**, **1 day before**, and **on overdue status**.
+  * Scans all pet vaccines with scheduled `nextDueDate`.
+  * Triggers idempotent proactive notifications at **7 days before**, **1 day before**, and **on overdue status**.
   * Automatically marks vaccine status as `OVERDUE` when expired.
-* In-app notification management: unread count badges, single read, and bulk read operations.
+* In-app notification management: unread count badges, single read, and bulk read-all operations.
 
 ### ☁️ Cloud Storage (AWS S3 & Compatible)
-* Direct upload to private S3 buckets with sanitized, unique keys.
+* Direct upload to private S3 buckets with sanitized, unique slug-based keys.
 * Generates temporary **Pre-signed URLs** on retrieval, keeping storage buckets secure and private.
-* Automatic file deletion on AWS S3 upon pet deletion or image updates.
+* Automatic file deletion on AWS S3 upon pet deletion or image replacement.
 * S3-compatible: compatible out-of-the-box with **AWS S3**, **Cloudflare R2**, **MinIO**, **Supabase Storage**, and **LocalStack**.
 
 ---
@@ -100,7 +103,8 @@ flowchart TD
         Helmet["Helmet (CSP, HSTS)"]
         Cors["CORS Configuration"]
         Throttler["Throttler Guard (Rate Limiting)"]
-        MetricsGuard["MetricsTokenGuard (x-metrics-token)"]
+        MetricsGuard["MetricsTokenGuard\n(x-metrics-token / Bearer)"]
+        MetricsInt["MetricsInterceptor\n(Latency & Request Counters)"]
         Validation["ValidationPipe (Whitelist & DTOs)"]
     end
 
@@ -117,7 +121,7 @@ flowchart TD
         VaccineMod["VaccineModule\n(Schedule & Doses)"]
         WeightMod["WeightModule\n(Timeline & Trends)"]
         NotificationMod["NotificationsModule\n(In-App Alerts)"]
-        MetricsMod["Prometheus & MetricsModule\n(Counters & Histograms)"]
+        MetricsMod["Prometheus & MetricsModule\n(Counters, Gauges & Histograms)"]
     end
 
     subgraph BackgroundWorker ["Automated Scheduler"]
@@ -135,10 +139,10 @@ flowchart TD
     end
 
     Client --> Helmet
-    Helmet --> Cors --> Throttler --> Validation
+    Helmet --> Cors --> MetricsInt --> Throttler --> Validation
     Validation --> AuthLayer
 
-    Alloy -->|Scrapes /metrics with x-metrics-token| MetricsGuard --> MetricsMod
+    Alloy -->|Scrapes /metrics| MetricsGuard --> MetricsMod
     Alloy -->|remote_write push| GrafanaCloud
 
     AuthLayer --> CoreApp
@@ -160,43 +164,49 @@ flowchart TD
 
 ```txt
 .
+├── CHANGELOG.md               # Project release history and version changelog
 ├── config.alloy.example       # Grafana Alloy telemetry collector template (Grafana Cloud)
 ├── docker-compose.yml         # Containerized PostgreSQL 15 setup
 ├── pnpm-workspace.yaml        # Workspace dependency configurations
 ├── package.json               # Scripts & dependencies
+├── rest-client/
+│   └── request.example.http   # Ready-to-use HTTP requests for VS Code REST Client
 ├── src/
-│   ├── app.module.ts          # Root module (TypeORM, Throttler, Schedule, Prometheus)
-│   ├── main.ts                # Bootstrap (Helmet, CORS, Metrics Guard, Swagger)
+│   ├── app.module.ts          # Root module (TypeORM, Throttler, Schedule, Config)
+│   ├── main.ts                # Bootstrap (Helmet, CORS, Metrics Guard/Interceptor, Swagger)
 │   │
 │   ├── auth/                  # Authentication & Authorization
-│   │   ├── decorators/        # @Roles() and custom decorators
-│   │   ├── dto/               # Login, Token and Auth DTOs
+│   │   ├── decorators/        # @Roles() custom decorator
+│   │   ├── dto/               # LoginDto
+│   │   ├── enum/              # UserRole enum (USER, ADMIN)
 │   │   ├── guards/            # JwtAuthGuard, GoogleAuthGuard, RolesGuard
 │   │   ├── types/             # AuthenticatedRequest, JwtPayloads
+│   │   ├── google.strategy.ts # Passport Google OAuth 2.0 strategy
+│   │   ├── jwt.strategy.ts    # Passport JWT Bearer strategy
 │   │   ├── auth.controller.ts # Auth endpoints (/auth/login, /auth/google, etc.)
-│   │   └── auth.service.ts    # OAuth flow, Token hashing & rotation
+│   │   └── auth.service.ts    # OAuth code exchange, Token hashing & rotation
 │   │
 │   ├── user/                  # User & Account Management
-│   │   ├── dto/               # CreateUser, UpdateUser, Password, Pagination DTOs
-│   │   ├── entities/          # User entity (soft deletes, roles, Google ID)
+│   │   ├── dto/               # CreateUser, UpdateUser, UpdatePassword, Pagination DTOs
+│   │   ├── entities/          # User entity (soft deletes, roles, Google OAuth fields)
 │   │   ├── user.controller.ts # User endpoints (/user, /user/me, /user/all)
 │   │   └── user.service.ts    # Account lifecycle & security
 │   │
 │   ├── pet/                   # Pet Domain Core
 │   │   ├── dto/               # CreatePet, UpdatePet DTOs
 │   │   ├── entities/          # Pet entity
-│   │   ├── types/             # PetSpecies enum
-│   │   ├── pet.controller.ts  # Pet endpoints (/pet) with file upload
+│   │   ├── types/             # PetSpecies & VaccineStatus enums
+│   │   ├── pet.controller.ts  # Pet endpoints (/pet) with Multer file upload
 │   │   ├── pet.service.ts     # Pet business rules & presigned image mapping
 │   │   │
 │   │   ├── vaccine/           # Vaccination Sub-Module
-│   │   │   ├── dto/           # CreateVaccine DTO
-│   │   │   ├── entities/      # Vaccine entity & VaccineStatus enum
+│   │   │   ├── dto/           # CreateVaccineDto
+│   │   │   ├── entities/      # Vaccine entity
 │   │   │   ├── vaccine.controller.ts
 │   │   │   └── vaccine.service.ts
 │   │   │
 │   │   └── weight/            # Weight Tracking Sub-Module
-│   │       ├── dto/           # CreateWeight DTO
+│   │       ├── dto/           # CreateWeightDto
 │   │       ├── entities/      # Weight entity
 │   │       ├── weight.controller.ts
 │   │       └── weight.service.ts
@@ -209,10 +219,11 @@ flowchart TD
 │   └── common/                # Shared Cross-Cutting Concerns
 │       ├── encrypting/        # AES-256-CTR crypto service with scrypt
 │       ├── filters/           # Global exception filters
-│       ├── hashing/           # Password hashing abstraction (bcrypt)
-│       ├── metrics/           # Prometheus metrics service, interceptor, and token guard
+│       ├── hashing/           # Password hashing abstraction (bcryptjs)
+│       ├── metrics/           # Prometheus controller, service, interceptor, and token guard
 │       ├── s3/                # AWS S3 client & presigned URL generator
-│       └── validators/        # Custom class-validators (e.g. IsNotFutureDate)
+│       ├── utils/             # Slug generator & random suffix utilities
+│       └── validators/        # Custom class-validators (IsNotFutureDate)
 ```
 
 ---
@@ -225,18 +236,22 @@ erDiagram
     USER ||--o{ NOTIFICATION : "receives"
     PET ||--o{ VACCINE : "has"
     PET ||--o{ WEIGHT : "tracks"
+    PET ||--o{ NOTIFICATION : "triggers"
 
     USER {
         uuid id PK
         string name
         string email UK
-        string phone UK
-        string googleId UK
-        string avatar
+        string password "Nullable (OAuth)"
+        string phone UK "Nullable"
+        string googleId UK "Nullable"
+        string googleAuthCodeHash "Nullable"
+        timestamp googleAuthCodeExpiresAt "Nullable"
+        string avatar "Nullable"
         enum role "USER | ADMIN"
         boolean forceLogout
         boolean isActive
-        string hashedRefreshToken
+        string hashedRefreshToken "Nullable"
         timestamp createdAt
         timestamp updatedAt
         timestamp deletedAt "Soft Delete"
@@ -248,8 +263,8 @@ erDiagram
         date birthDate
         string race
         enum species "dog | cat | bird | other"
-        string imageKey "S3 Object Key"
-        text notes
+        string imageKey "S3 Object Key (Nullable)"
+        text notes "Nullable"
         uuid ownerId FK
         timestamp createdAt
         timestamp updatedAt
@@ -259,7 +274,7 @@ erDiagram
         uuid id PK
         string vaccineName
         date applicationDate
-        date nextDueDate
+        date nextDueDate "Nullable"
         enum status "APPLIED | PENDING | OVERDUE"
         uuid petId FK
         timestamp createdAt
@@ -267,8 +282,8 @@ erDiagram
 
     WEIGHT {
         uuid id PK
-        float weight
-        date date
+        float value
+        date measurementDay
         uuid petId FK
         timestamp createdAt
     }
@@ -276,12 +291,14 @@ erDiagram
     NOTIFICATION {
         uuid id PK
         uuid userId FK
-        uuid petId FK
-        string type "VACCINE_REMINDER | SYSTEM"
+        uuid petId FK "Nullable"
+        uuid referenceId "Vaccine ID (Nullable)"
+        string type "vaccine_reminder"
         string title
-        string message
+        text message
         boolean read
         timestamp createdAt
+        timestamp updatedAt
     }
 ```
 
@@ -309,7 +326,7 @@ erDiagram
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file in the project root based on [.env.example](file:///.env.example):
+Create a `.env` file in the project root based on [`.env.example`](./.env.example):
 
 ```bash
 cp .env.example .env
@@ -327,8 +344,8 @@ cp .env.example .env
 | `ENCRYPT_PASSWORD` | **Yes** | Master key for AES-256-CTR reversible encryption | `my_super_strong_encrypt_secret_key` |
 | `IV_LENGTH` | **Yes** | Initialization Vector byte length (AES-CTR) | `16` |
 | `NODE_ENV` | No | Application environment (`development` / `production`) | `development` |
-| `PORT` | No | HTTP server port (defaults to 3001) | `3001` |
-| `METRICS_TOKEN` | Optional | Bearer secret token for Prometheus `/metrics` scraping in production | `my_telemetry_secure_token` |
+| `PORT` | No | HTTP server port (defaults to `3001`) | `3001` |
+| `METRICS_TOKEN` | Optional | Secret token for Prometheus `/metrics` scraping in production (`x-metrics-token` or `Bearer`) | `my_telemetry_secure_token` |
 | `FRONTEND_URL` | No | Frontend URL for OAuth redirects | `http://localhost:3000` |
 | `S3_AWS_ACCESS_KEY` | **Yes** | AWS S3 / Cloudflare R2 Access Key ID | `AKIAIOSFODNN7EXAMPLE` |
 | `S3_AWS_SECRET_KEY` | **Yes** | AWS S3 / Cloudflare R2 Secret Access Key | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
@@ -406,8 +423,8 @@ Once started, the API will be available at:
 
 PetTracker includes a complete observability pipeline to stream live telemetry into **Grafana Cloud**:
 
-1. **API Exposes Metrics**: The NestJS application exposes Prometheus metrics at `GET /metrics`. In production, this route is protected by `MetricsTokenGuard` and requires the `x-metrics-token` header matching your `METRICS_TOKEN`.
-2. **Grafana Alloy Scrapes & Pushes**: Configure [Grafana Alloy](https://grafana.com/docs/alloy/latest/) using the provided template:
+1. **API Exposes Metrics**: The NestJS application exposes Prometheus metrics at `GET /metrics`. In production, this route is protected by `MetricsTokenGuard` and accepts either the `x-metrics-token` header or an `Authorization: Bearer <token>` header matching your `METRICS_TOKEN`.
+2. **Grafana Alloy Scrapes & Pushes**: Configure [Grafana Alloy](https://grafana.com/docs/alloy/latest/) using the provided template ([`config.alloy.example`](./config.alloy.example)):
 
 ```bash
 # Copy template configuration
@@ -458,7 +475,7 @@ When running in development mode (`NODE_ENV !== 'production'`), interactive Open
 
 👉 **`http://localhost:3001/api`**
 
-You can also use the ready-to-use HTTP request file located at [`rest-client/request.example.http`](file:///rest-client/request.example.http) using the VS Code REST Client or Thunder Client extension.
+You can also use the ready-to-use HTTP request file located at [`rest-client/request.example.http`](./rest-client/request.example.http) using the VS Code REST Client or Thunder Client extension.
 
 ---
 
@@ -481,10 +498,10 @@ You can also use the ready-to-use HTTP request file located at [`rest-client/req
 | :--- | :--- | :--- | :---: |
 | `POST` | `/user` | Register a new user account | Public |
 | `GET` | `/user/me` | Retrieve profile of the current logged-in user | Bearer JWT |
-| `PATCH` | `/user/me` | Update current user profile (name, avatar, phone) | Bearer JWT |
+| `PATCH` | `/user/me` | Update current user profile (`name`, `avatar`, `phone`) | Bearer JWT |
 | `PATCH` | `/user/me/password` | Change user password (`currentPassword` & `newPassword`) | Bearer JWT |
 | `DELETE` | `/user/me` | Soft delete the authenticated user account | Bearer JWT |
-| `GET` | `/user/all` | List all registered users (paginated) | Admin Only |
+| `GET` | `/user/all` | List all registered users (paginated via `page` & `limit`) | Admin Only |
 
 ### 🐾 Pets (`/pet`)
 
@@ -498,13 +515,13 @@ You can also use the ready-to-use HTTP request file located at [`rest-client/req
 
 > **Multipart Upload for Pet Creation (`POST /pet`)**:  
 > Acceptable file key: `pet-img` (`png`, `jpeg`, `jpg`, `webp`, max 3MB).  
-> Fields: `name`, `race`, `species` (`dog` \| `cat` \| `bird` \| `other`), `birthDate` (`YYYY-MM-DD`), `notes` (optional).
+> Fields: `name`, `race`, `species` (`dog` \| `cat` \| `bird` \| `other`), `birthDate` (`YYYY-MM-DD`, cannot be a future date), `notes` (optional).
 
 ### 💉 Vaccines (`/vaccines`)
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :---: |
-| `POST` | `/vaccines` | Record a vaccine (`vaccineName`, `applicationDate`, `nextDueDate`) | Bearer JWT |
+| `POST` | `/vaccines` | Record a vaccine (`vaccineName`, `applicationDate`, `nextDueDate`, `petId`) | Bearer JWT |
 | `GET` | `/vaccines/:petId` | List all vaccines registered for a specific pet | Bearer JWT |
 | `DELETE` | `/vaccines/:id` | Delete a vaccine record | Bearer JWT |
 
@@ -512,7 +529,7 @@ You can also use the ready-to-use HTTP request file located at [`rest-client/req
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :---: |
-| `POST` | `/weight` | Add a weight entry for a pet (`weight`, `date`, `petId`) | Bearer JWT |
+| `POST` | `/weight` | Add a weight entry for a pet (`value`, `measurementDay`, `petId`) | Bearer JWT |
 | `GET` | `/weight` | List all weight entries belonging to the user's pets | Bearer JWT |
 | `GET` | `/weight/:petId` | Retrieve full weight history for a specific pet | Bearer JWT |
 | `GET` | `/weight/:petId/last` | Get the last 10 weight records (tailored for trend charts) | Bearer JWT |
@@ -531,7 +548,7 @@ You can also use the ready-to-use HTTP request file located at [`rest-client/req
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :---: |
-| `GET` | `/metrics` | Prometheus metrics (CPU, RAM, HTTP request count, latencies) | Open in dev; `x-metrics-token` in prod |
+| `GET` | `/metrics` | Prometheus metrics (CPU, RAM, HTTP request count, latencies, domain gauges) | Open in dev; `x-metrics-token` or `Bearer` in prod |
 
 ---
 
@@ -549,13 +566,32 @@ pnpm run test:watch
 # Generate test coverage report
 pnpm run test:cov
 
-# Run End-to-End (E2E) tests
-pnpm run test:e2e
-
 # Code style linting and formatting
 pnpm run lint
 pnpm run format
 ```
+
+---
+
+## 🔄 CI/CD Pipeline (GitHub Actions)
+
+The repository includes automated CI/CD workflows configured under [`.github/workflows/`](./.github/workflows/):
+
+1. **Continuous Integration ([`ci.yml`](./.github/workflows/ci.yml))**:
+   - Triggers on every `push` and `pull_request` targeting `master` or `main`.
+   - Runs ESLint validation and Prettier format verification.
+   - Executes Jest unit tests and generates coverage reports (saved as workflow artifacts).
+   - Validates the production TypeScript build (`dist/main.js`).
+
+2. **Continuous Deployment ([`cd.yml`](./.github/workflows/cd.yml))**:
+   - Triggers on `push` to `master` and supports manual dispatch (`workflow_dispatch`).
+   - Re-validates tests and compilation before deploying.
+   - **Railway Deployment**: Triggers deployment via Railway Webhook (`RAILWAY_DEPLOY_WEBHOOK`) or Railway CLI (`RAILWAY_TOKEN`).
+   - **Docker & Container Registry**: Automatically builds a production multi-stage image (`Dockerfile`) and pushes to **GitHub Container Registry (GHCR)** (`ghcr.io/<owner>/<repo>:latest`).
+
+#### Recommended GitHub Secrets for CD:
+* `RAILWAY_TOKEN` or `RAILWAY_DEPLOY_WEBHOOK`: Token or webhook URL from Railway settings.
+* `RAILWAY_SERVICE_NAME`: (Optional) Target Railway service name.
 
 ---
 
@@ -565,14 +601,20 @@ pnpm run format
 * [x] S3 Pre-signed expiring image URLs
 * [x] Daily automated Cron Job for vaccine alerts
 * [x] Rate Limiting (Throttler) and Helmet security hardening
-* [x] Prometheus metrics & telemetry integration (`/metrics`)
+* [x] Prometheus metrics & custom HTTP/domain telemetry integration (`/metrics`)
 * [x] Grafana Alloy & Grafana Cloud telemetry pipeline (`config.alloy.example`)
 * [x] Containerized local database infrastructure (`docker-compose.yml`)
 * [ ] Multi-image gallery for pets
 * [ ] Push Notifications (WebPush / FCM) and transactional emails (Resend / AWS SES)
 * [ ] Redis cache layer for high-throughput read operations
 * [ ] Export full pet medical history to PDF
-* [ ] CI/CD pipeline via GitHub Actions with automated test runs
+* [x] CI/CD pipeline via GitHub Actions with automated test runs, linting, and Docker/Railway deployment
+
+---
+
+## 📝 Changelog
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for a detailed history of features, fixes, and architectural updates.
 
 ---
 
@@ -588,4 +630,4 @@ pnpm run format
 
 ## 📄 License
 
-This project is licensed under the [UNLICENSED](LICENSE) terms.
+This project is licensed under the **UNLICENSED** terms (private/proprietary).

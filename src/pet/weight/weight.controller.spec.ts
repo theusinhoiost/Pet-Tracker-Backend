@@ -8,7 +8,12 @@ describe('WeightController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WeightController],
-      providers: [WeightService],
+      providers: [
+        {
+          provide: WeightService,
+          useValue: {},
+        },
+      ],
     }).compile();
 
     controller = module.get<WeightController>(WeightController);

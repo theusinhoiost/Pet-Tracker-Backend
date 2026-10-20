@@ -8,9 +8,18 @@ export function IsNotFutureDate(validationOptions?: ValidationOptions) {
       propertyName: propertyName,
       options: validationOptions,
       validator: {
-        validate(value: any) {
+        validate(value: unknown) {
           if (!value) return false;
+          if (
+            typeof value !== 'string' &&
+            typeof value !== 'number' &&
+            !(value instanceof Date)
+          ) {
+            return false;
+          }
           const date = new Date(value);
+          if (isNaN(date.getTime())) return false;
+
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           date.setHours(0, 0, 0, 0);

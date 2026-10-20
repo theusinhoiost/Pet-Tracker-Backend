@@ -5,14 +5,15 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
 
-    const response = ctx.getResponse();
-    const request = ctx.getRequest();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
 
     const status =
       exception instanceof HttpException
@@ -27,7 +28,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       error:
-        typeof exceptionResponse === 'object'
+        typeof exceptionResponse === 'object' && exceptionResponse !== null
           ? exceptionResponse
           : { message: exceptionResponse || 'Internal Server Error' },
     });
