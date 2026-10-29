@@ -164,11 +164,15 @@ flowchart TD
 
 ```txt
 .
+├── .github/
+│   └── workflows/             # Automated CI and CD pipelines (GitHub Actions)
 ├── CHANGELOG.md               # Project release history and version changelog
 ├── config.alloy.example       # Grafana Alloy telemetry collector template (Grafana Cloud)
 ├── docker-compose.yml         # Containerized PostgreSQL 15 setup
-├── pnpm-workspace.yaml        # Workspace dependency configurations
+├── Dockerfile                 # Multi-stage production container image
 ├── package.json               # Scripts & dependencies
+├── pnpm-lock.yaml             # Pinned dependency tree
+├── pnpm-workspace.yaml        # Workspace dependency & build configuration
 ├── rest-client/
 │   └── request.example.http   # Ready-to-use HTTP requests for VS Code REST Client
 ├── src/
@@ -437,20 +441,20 @@ prometheus.remote_write "metrics_hosted_prometheus" {
   endpoint {
     url = "https://prometheus-prod-40-prod-sa-east-1.grafana.net/api/prom/push"
     basic_auth {
-      username = "SEU_USERNAME"
-      password = "SEU_TOKEN_GLC"
+      username = "YOUR_USERNAME"
+      password = "YOUR_GRAFANA_CLOUD_TOKEN"
     }
   }
 }
 
 prometheus.scrape "pettracker" {
   targets = [{
-    __address__ = "SEU-APP.up.railway.app:443",
+    __address__ = "your-app.up.railway.app:443",
     __scheme__ = "https",
     __metrics_path__ = "/metrics",
   }]
   extra_headers = {
-    "x-metrics-token" = "SEU_METRICS_TOKEN"
+    "x-metrics-token" = "YOUR_METRICS_TOKEN"
   }
   forward_to = [prometheus.remote_write.metrics_hosted_prometheus.receiver]
 }
