@@ -3,6 +3,7 @@ name: CD
 on:
   push:
     branches:
+      - prod
       - master
   workflow_dispatch:
     inputs:
@@ -114,7 +115,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/prod' || github.ref == 'refs/heads/master' }}
             type=sha,format=short
 
       - name: Build and push Docker image
