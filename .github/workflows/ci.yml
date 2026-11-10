@@ -3,10 +3,14 @@ name: CI
 on:
   push:
     branches:
+      - prod
+      - dev
       - master
       - main
   pull_request:
     branches:
+      - prod
+      - dev
       - master
       - main
 
